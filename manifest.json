@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3, 
+  "name": "Neuro Mirror",
+  "version": "1.0",
+  "permissions": ["tabs", "storage", "idle", "unlimitedStorage"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "all_frames": false
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["modules/*.js"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}
