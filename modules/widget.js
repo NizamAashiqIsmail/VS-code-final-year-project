@@ -11,6 +11,13 @@ export const initWidget = (shadow, openSettings) => {
     if (request.type === 'STATE_UPDATE') {
       currentMood = request.state;
       updateAvatarImage(shadow, currentMood);
+
+      // update the nudge text for the new state
+      const nudgeText = state.stateSettings[currentMood]?.nudge;
+      const noteBox = shadow.getElementById('note-box');
+      if (noteBox && nudgeText) {
+        noteBox.innerText = nudgeText;
+      }
     }
   });
 
@@ -90,6 +97,9 @@ function toggleMinimize(shadow) {
 function toggleSnooze(btn) {
   state.isSnoozed = !state.isSnoozed;
   btn.innerText = state.isSnoozed ? '🔕' : '🔔';
+
+  // inform background about snooze state so it can pause evaluation
+  chrome.runtime.sendMessage({ type: 'SNOOZE_TOGGLE', isSnoozed: state.isSnoozed });
 }
 
 function toggleImage(shadow) {

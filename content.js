@@ -50,7 +50,7 @@
     </div>
   `;
 
-  // Create Settings Card
+  // settings card is created in settings.js because it’s only needed there, and it’s hidden by default until the user clicks the settings button.
   const settingsCard = document.createElement('div');
   settingsCard.id = 'settings-card';
   settingsCard.innerHTML = `

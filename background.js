@@ -2,8 +2,16 @@ let activeTabId = null;
 let startTime = null;
 let activeTabTitle = "";
 let activeTabUrl = "";
+let isBlockedSite = false; // Track if current site is blocked
 
-// Function to log time spent (Your existing logic)
+// snooze tracking
+let isSnoozed = false;           // when true, evaluation is paused
+let snoozeStart = null;         // timestamp when snooze began
+let totalSnooze = 0;            // accumulated seconds snoozed
+const snoozeRecords = [];       // log of individual snooze sessions with date and duration
+
+
+// function that calculate the time spent in each tab
 function logTimeSpent() {
   if (activeTabId && startTime) {
     const endTime = Date.now();
@@ -14,45 +22,76 @@ function logTimeSpent() {
   return 0;
 }
 
-// --- NEW: Evaluate State & Notify Content Script ---
+//  Evaluate State & Notify Content Script
 async function evaluateState() {
-  if (!activeTabId) return;
+  // if user has snoozed, skip evaluation entirely
+  if (isSnoozed || !activeTabId) return;
 
   try {
     const tab = await chrome.tabs.get(activeTabId);
-    activeTabUrl = tab.url || "";
-    activeTabTitle = tab.title || "Unknown";
+    activeTabUrl = tab.url || "unknown";
+    activeTabTitle = tab.title || "unknown";
 
-    // 1. Get Blocklist and Avatar settings from storage
     const data = await chrome.storage.local.get(["blockList"]);
     const blockList = data.blockList || [];
-    
-    // 2. Determine State
-    let state = "focused"; // Default
-    
-    // Check if current URL is in block list
-    const blockedSite = blockList.find(site => activeTabUrl.includes(site.url));
-    
+
+    // Default to focused
+    let state = "focused";
+
+    const blockedSite = blockList.find(site => activeTabUrl.includes(site));
+    console.log("Blocked site match:", blockedSite);
+
     if (blockedSite) {
-      const timeSpent = (Date.now() - startTime) / 1000;
-      // If user spent more than the allowed limit
-      if (timeSpent > blockedSite.limit) {
+      isBlockedSite = true;
+
+      // Protect against missing startTime
+      const timeSpent = startTime ? (Date.now() - startTime) / 1000 : 0;
+
+      // Toggle between focused and distracted only (for now)
+      if (timeSpent > 300) {
         state = "distracted";
+        console.log("User distracted on blocked site", { site: blockedSite, timeSpent: Math.round(timeSpent) });
+      } else {
+        state = "focused";
       }
-    } else if (activeTabUrl.startsWith("chrome://") || activeTabUrl.startsWith("about:")) {
-      state = "out_of_path";
+    } else {
+      isBlockedSite = false;
+      state = "focused";
     }
 
-    // 3. Send message to the Content Script in the current tab
-    chrome.tabs.sendMessage(activeTabId, { 
-      type: "STATE_UPDATE", 
-      state: state 
-    }).catch(err => console.log("Content script not ready yet"));
+    // Send only the simplified state to the content script
+    chrome.tabs.sendMessage(activeTabId, {
+      type: "STATE_UPDATE",
+      state: state
+    }).catch(err => console.log("Content script not ready yet", err));
 
   } catch (e) {
     console.error("Error evaluating state:", e);
   }
 }
+
+// listen for snooze toggle messages from the widget
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.type === 'SNOOZE_TOGGLE') {
+    isSnoozed = !!msg.isSnoozed;
+    if (isSnoozed) {
+      snoozeStart = Date.now();
+      console.log('Snooze started');
+    } else {
+      if (snoozeStart) {
+        const duration = Math.round((Date.now() - snoozeStart) / 1000);
+        const when = new Date().toISOString();
+        console.log(`Snooze ended: ${duration}s at ${when}`);
+        snoozeRecords.push({ date: when, duration });
+        totalSnooze += duration;
+        console.log('Total snooze duration now', totalSnooze, 'seconds');
+        snoozeStart = null;
+      }
+      // after waking from snooze, re-evaluate to update state immediately
+      evaluateState();
+    }
+  }
+});
 
 // --- LISTENERS ---
 
@@ -77,6 +116,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 
 // 3. Idle Detection (Sleepy State)
 chrome.idle.onStateChanged.addListener((idleState) => {
+  if (isSnoozed) return; // don't override state while snoozed
   if (idleState === "idle" || idleState === "locked") {
     chrome.tabs.sendMessage(activeTabId, { type: "STATE_UPDATE", state: "sleepy" });
   } else {
