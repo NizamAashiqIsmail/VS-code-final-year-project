@@ -4,11 +4,32 @@ let activeTabTitle = "";
 let activeTabUrl = "";
 let isBlockedSite = false; // Track if current site is blocked
 
-// snooze tracking
+// cache and snooze tracking
+let cachedBlockList = [];
 let isSnoozed = false;           // when true, evaluation is paused
 let snoozeStart = null;         // timestamp when snooze began
 let totalSnooze = 0;            // accumulated seconds snoozed
 const snoozeRecords = [];       // log of individual snooze sessions with date and duration
+// track last state sent to avoid noisy periodic messages
+let lastSentState = null;
+
+// Initialize cache and restore snooze state
+chrome.storage.local.get(["blockList", "isSnoozed", "snoozeStart", "totalSnooze", "snoozeRecords"], (data) => {
+  cachedBlockList = data.blockList || [];
+  isSnoozed = !!data.isSnoozed;
+  snoozeStart = data.snoozeStart || null;
+  totalSnooze = data.totalSnooze || 0;
+  if(data.snoozeRecords) {
+      snoozeRecords.push(...data.snoozeRecords);
+  }
+});
+
+// Update cache on changes
+chrome.storage.onChanged.addListener((changes, namespace) => {
+  if (namespace === "local" && changes.blockList) {
+    cachedBlockList = changes.blockList.newValue || [];
+  }
+});
 
 
 // function that calculate the time spent in each tab
@@ -32,11 +53,10 @@ async function evaluateState() {
     activeTabUrl = tab.url || "unknown";
     activeTabTitle = tab.title || "unknown";
 
-    const data = await chrome.storage.local.get(["blockList"]);
-    const blockList = data.blockList || [];
+    const blockList = cachedBlockList;
 
-    // Default to focused
-    let state = "focused";
+    // Default to the new 'default' state until we evaluate
+    let state = "default";
 
     const blockedSite = blockList.find(site => activeTabUrl.includes(site));
     console.log("Blocked site match:", blockedSite);
@@ -47,23 +67,26 @@ async function evaluateState() {
       // Protect against missing startTime
       const timeSpent = startTime ? (Date.now() - startTime) / 1000 : 0;
 
-      // Toggle between focused and distracted only (for now)
-      if (timeSpent > 300) {
-        state = "distracted";
-        console.log("User distracted on blocked site", { site: blockedSite, timeSpent: Math.round(timeSpent) });
+      // Toggle between dfault and out of path only (for now)
+      if (timeSpent > 60) {  // 1 min = 60 s , so 5 min = 300 s
+        state = "out_of_path";
+        console.log("User in blocked site", { site: blockedSite, timeSpent: Math.round(timeSpent) });
       } else {
-        state = "focused";
+        state = "default";
       }
     } else {
       isBlockedSite = false;
-      state = "focused";
+      state = "default";
     }
 
-    // Send only the simplified state to the content script
-    chrome.tabs.sendMessage(activeTabId, {
-      type: "STATE_UPDATE",
-      state: state
-    }).catch(err => console.log("Content script not ready yet", err));
+    // Send only the simplified state to the content script when it changes
+    if (state !== lastSentState) {
+      chrome.tabs.sendMessage(activeTabId, {
+        type: "STATE_UPDATE",
+        state: state
+      }).catch(err => console.log("Content script not ready yet", err));
+      lastSentState = state;
+    }
 
   } catch (e) {
     console.error("Error evaluating state:", e);
@@ -88,8 +111,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         snoozeStart = null;
       }
       // after waking from snooze, re-evaluate to update state immediately
+      // force send on wake
+      lastSentState = null;
       evaluateState();
     }
+    // Save state to storage
+    chrome.storage.local.set({
+      isSnoozed,
+      snoozeStart,
+      totalSnooze,
+      snoozeRecords
+    });
   }
 });
 
@@ -101,7 +133,8 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
 
   activeTabId = activeInfo.tabId;
   startTime = Date.now();
-  
+  // force send for a new active tab
+  lastSentState = null;
   evaluateState();
 });
 
@@ -110,6 +143,8 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (tabId === activeTabId && (changeInfo.title || changeInfo.url)) {
     logTimeSpent();
     startTime = Date.now(); // Reset timer for new URL/Title
+    // force send for URL/title changes
+    lastSentState = null;
     evaluateState();
   }
 });
@@ -133,7 +168,11 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   }
 });
 
-// Heartbeat: Check every 5 seconds to see if a "focused" tab has turned "distracted" by time limit
-setInterval(() => {
-  evaluateState();
-}, 5000);
+// Heartbeat: Check periodically to see if a "focused" tab has turned "distracted" by time limit
+// Using alarms for Manifest V3 reliability
+chrome.alarms.create("heartbeat", { periodInMinutes: 5 / 60 });
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === "heartbeat") {
+    evaluateState();
+  }
+});

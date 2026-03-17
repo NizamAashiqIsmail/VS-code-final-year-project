@@ -4,13 +4,21 @@ export const initWidget = (shadow, openSettings) => {
   const wrapper = shadow.getElementById('widget-wrapper');
   wrapper.style.display = 'flex';
 
-  let currentMood = 'focused'; // Default mood
+  let currentMood = 'default'; // Default mood (new state)
+  let hasState = false;        // tracks whether we've received a STATE_UPDATE yet
 
   // Listen for mood/state updates from background.js
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.type === 'STATE_UPDATE') {
       currentMood = request.state;
       updateAvatarImage(shadow, currentMood);
+
+      // mark that we now have real state information
+      if (!hasState) {
+        hasState = true;
+      }
+      // reset timer so the first rotation happens 10 sec after the update
+      state.seconds = 0;
 
       // update the nudge text for the new state
       const nudgeText = state.stateSettings[currentMood]?.nudge;
@@ -61,13 +69,18 @@ export const initWidget = (shadow, openSettings) => {
 
   // 3. Timer Logic
   setInterval(() => {
-    if(!state.isSnoozed) { // if snoozed the timer stops
+    if(!state.isSnoozed && hasState) { // wait for first state update before running
       state.seconds++;
       const timer = shadow.getElementById('tab-timer');
       if(timer) timer.innerText = state.seconds + 's';
-      if (state.seconds % 10 === 0) {  // NEED TO CHANGE THIS
-        state.currentNoteIndex = (state.currentNoteIndex + 1) % notes.length;
-        shadow.getElementById('note-box').innerText = notes[state.currentNoteIndex];
+
+      if (state.seconds % 10 === 0) {
+        // Only rotate notes when the current mood allows it
+        if (currentMood === 'focused' || currentMood === 'default') {
+          state.currentNoteIndex = (state.currentNoteIndex + 1) % notes.length;
+          const noteBox = shadow.getElementById('note-box');
+          if (noteBox) noteBox.innerText = notes[state.currentNoteIndex];
+        }
       }
     }
   }, 1000); // 1 second interval

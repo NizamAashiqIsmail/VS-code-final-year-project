@@ -34,6 +34,8 @@ export const getStyles = () => `
   .video-preview { width: 100%; height: 160px; background: #000; border-radius: 10px; margin-bottom: 15px; position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; }
   #timer-display { position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,0.6); color: white; padding: 2px 6px; border-radius: 4px; font-size: 11px; }
   #calib-video { width: 100%; height: 100%; object-fit: cover; }
+  #mesh-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+  #face-stats { position: absolute; bottom: 8px; left: 8px; background: rgba(0,0,0,0.6); color: white; padding: 6px 10px; border-radius: 8px; font-size: 11px; text-align: left; line-height: 1.3; max-width: 80%; }
 
   /* MAIN WIDGET STYLES */
   #widget-wrapper { position: fixed; top: 150px; right: 50px; width: 120px; height: 120px; z-index: 999999; display: flex; align-items: center; justify-content: center; user-select: none; }
@@ -49,8 +51,28 @@ export const getStyles = () => `
   .settings-header { font-weight: bold; font-size: 16px; margin-bottom: 15px; color: #4285f4; border-bottom: 1px solid #eee; padding-bottom: 5px; }
   .settings-section { margin-bottom: 15px; }
   .section-title { font-size: 11px; font-weight: bold; color: #888; text-transform: uppercase; margin-bottom: 8px; }
-  .setting-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; font-size: 12px; }
-  .avatar-up { width: 130px; font-size: 10px; }
+  .setting-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 5px;
+    font-size: 12px;
+  }
+  /* label text color and a fixed width for better alignment */
+  .setting-row > span {
+    color: #333;
+    flex: 0 0 80px;
+    text-align: right;
+    margin-right: 8px;
+  }
+  .avatar-up {
+    /* remove flex; keep natural size so button appears after status */
+    font-size: 10px;
+  }
+  .upload-status {
+    min-width: 60px;
+    text-align: center;
+  }
   .block-input-row { display: flex; gap: 5px; margin-bottom: 10px; }
   .block-input-row input { flex-grow: 1; padding: 5px; font-size: 12px; border: 1px solid #ddd; border-radius: 4px; }
   #block-list-display { max-height: 100px; overflow-y: auto; font-size: 11px; }
